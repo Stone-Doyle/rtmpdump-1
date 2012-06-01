@@ -96,6 +96,7 @@ STREAMING_SERVER *rtmpServer = 0;	// server structure pointer
 STREAMING_SERVER *startStreaming(const char *address, int port);
 void stopStreaming(STREAMING_SERVER * server);
 void AVreplace(AVal *src, const AVal *orig, const AVal *repl);
+AVal AVcopy(AVal src);
 
 static const AVal av_dquote = AVC("\"");
 static const AVal av_escdquote = AVC("\\\"");
@@ -599,6 +600,17 @@ ServeInvoke(STREAMING_SERVER *server, RTMP * r, RTMPPacket *packet, unsigned int
       if (obj.o_num > 5)
 	r->Link.length = AMFProp_GetNumber(AMF_GetProp(&obj, NULL, 5));
       */
+      double StartFlag = 0;
+      AMFObjectProperty *Start = AMF_GetProp(&obj, NULL, 4);
+      if (!(Start->p_type == AMF_INVALID))
+        StartFlag = AMFProp_GetNumber(Start);
+      r->Link.app = AVcopy(r->Link.app);
+      if (StartFlag == -1000 || (r->Link.app.av_val && strstr(r->Link.app.av_val, "live")))
+        {
+          StartFlag = -1000;
+          server->arglen += 7;
+          server->argc += 1;
+        }
       if (r->Link.tcUrl.av_len)
 	{
 	  len = server->arglen + r->Link.playpath.av_len + 4 +
@@ -666,6 +678,17 @@ ServeInvoke(STREAMING_SERVER *server, RTMP * r, RTMPPacket *packet, unsigned int
 	    ptr = dumpAMF(&r->Link.extras, ptr, argv, &argc);
 	    AMF_Reset(&r->Link.extras);
 	  }
+          if (StartFlag == -1000)
+            {
+              argv[argc].av_val = ptr + 1;
+              argv[argc++].av_len = 6;
+              ptr += sprintf(ptr, " --live");
+            }
+          if (r->Link.extras.o_num)
+            {
+              ptr = dumpAMF(&r->Link.extras, ptr, argv, &argc);
+              AMF_Reset(&r->Link.extras);
+            }
 	  argv[argc].av_val = ptr + 1;
 	  argv[argc++].av_len = 2;
 	  argv[argc].av_val = ptr + 5;
@@ -1177,4 +1200,23 @@ AVreplace(AVal *src, const AVal *orig, const AVal *repl)
   *dptr = '\0';
   src->av_val = dest;
   src->av_len = dptr - dest;
+}
+
+AVal
+AVcopy(AVal src)
+{
+  AVal dst;
+  if (src.av_len)
+    {
+      dst.av_val = malloc(src.av_len + 1);
+      memcpy(dst.av_val, src.av_val, src.av_len);
+      dst.av_val[src.av_len] = '\0';
+      dst.av_len = src.av_len;
+    }
+  else
+    {
+      dst.av_val = NULL;
+      dst.av_len = 0;
+    }
+  return dst;
 }
